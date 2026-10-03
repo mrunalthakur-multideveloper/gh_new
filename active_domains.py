@@ -101,31 +101,59 @@ class ActiveDomainsClient:
 
         title_lower = (job_title or "").lower().strip()
         loc_lower = (job_location_str or "").lower().strip()
-        desc_lower = (job_desc or "")[:1500].lower()
+        desc_lower = (job_desc or "").lower()
+
+        # Common tech title indicators
+        is_tech_role = any(r in title_lower for r in [
+            "engineer", "developer", "architect", "data", "full stack", "fullstack",
+            "frontend", "front-end", "backend", "back-end", "software", "programmer",
+            "dba", "database", "python", "react", "node", "web", "platform", "cloud",
+            "infrastructure", "devops", "sre", "machine learning", "ai", "scientist"
+        ])
 
         for client in data:
             target_country = (client.get("country") or "").lower().strip()
             desired_titles = client.get("desired_job_titles", [])
+            client_keywords = client.get("keywords", [])
+            domain_name = client.get("domain", "")
 
-            # 1. Check Title Match
+            # 1. Check Title Match (Direct or Partial)
             title_matched = False
-            matched_title = None
+            matched_tag = None
             for t in desired_titles:
                 t_clean = t.lower().strip()
                 words = [w for w in t_clean.split() if len(w) > 2 and w not in ["the", "and", "for", "with", "developer", "engineer"]]
                 if t_clean in title_lower:
                     title_matched = True
-                    matched_title = t
+                    matched_tag = t
                     break
                 elif len(words) >= 1 and all(w in title_lower for w in words):
                     title_matched = True
-                    matched_title = t
+                    matched_tag = t
                     break
+
+            # 2. Check Description Keyword Match (Like Greenhouse Portal Search)
+            # If the role is a software/tech role and mentions the domain's core technologies
+            if not title_matched and is_tech_role:
+                domain_lower = domain_name.lower()
+                if "python" in domain_lower and any(k in desc_lower for k in ["python", "django", "fastapi", "flask", "sqlalchemy"]):
+                    title_matched = True
+                    matched_tag = "Python Developer"
+                elif "frontend" in domain_lower and any(k in desc_lower for k in ["react", "typescript", "javascript", "next.js", "vue", "angular"]):
+                    title_matched = True
+                    matched_tag = "Frontend Developer"
+                elif "full stack" in domain_lower and any(k in desc_lower for k in ["full stack", "fullstack", "react", "node", "typescript", "django", "spring boot"]):
+                    title_matched = True
+                    matched_tag = "Full Stack Developer"
+                elif "database" in domain_lower or "dba" in domain_lower:
+                    if any(k in desc_lower for k in ["dba", "database administrator", "postgresql dba", "mysql dba", "oracle dba", "sql server dba"]):
+                        title_matched = True
+                        matched_tag = "Database Administrator"
 
             if not title_matched:
                 continue
 
-            # 2. Check Location / Country Match
+            # 3. Check Location / Country Match
             loc_matched = False
 
             if not target_country or target_country in ["global", "worldwide", "any"]:
@@ -140,8 +168,7 @@ class ActiveDomainsClient:
                 ]
                 if any(k in loc_lower for k in us_keywords):
                     loc_matched = True
-                elif "remote" in loc_lower or "remote" in desc_lower:
-                    # Remote position without country exclusion
+                elif "remote" in loc_lower or "remote" in desc_lower[:1000]:
                     if not any(ex in loc_lower for ex in ["emea", "apac", "latam", "europe", "uk only", "canada only"]):
                         loc_matched = True
 
@@ -165,12 +192,11 @@ class ActiveDomainsClient:
                     loc_matched = True
 
             else:
-                # Direct substring match
-                if target_country in loc_lower or target_country in desc_lower:
+                if target_country in loc_lower or target_country in desc_lower[:1000]:
                     loc_matched = True
 
             if loc_matched:
-                return True, matched_title, client
+                return True, matched_tag, client
 
         return False, None, None
 
